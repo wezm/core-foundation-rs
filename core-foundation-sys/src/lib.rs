@@ -19,6 +19,7 @@ pub mod date;
 pub mod dictionary;
 pub mod error;
 pub mod filedescriptor;
+pub mod machport;
 pub mod messageport;
 pub mod number;
 pub mod propertylist;

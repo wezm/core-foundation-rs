@@ -89,9 +89,9 @@ extern {
 //                                     rcvTimeout: CFTimeInterval,
 //                                     replyMode: CFStringRef,
 //                                     returnData: *mut CFDataRef) -> i32;
-//     pub fn CFMessagePortCreateRunLoopSource(allocator: CFAllocatorRef,
-//                                             local: CFMessagePortRef,
-//                                             order: CFIndex)
-//         -> CFRunLoopSourceRef;
+    pub fn CFMachPortCreateRunLoopSource(allocator: CFAllocatorRef,
+                                            port: CFMachPortRef,
+                                            order: CFIndex)
+        -> CFRunLoopSourceRef;
 //     // CFMessagePortSetDispatchQueue
 }

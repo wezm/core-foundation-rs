@@ -1,6 +1,9 @@
 #![allow(non_upper_case_globals)]
 
-use core_foundation::base::{CFRelease, CFRetain, CFTypeID};
+use std::os::raw::c_void;
+
+use core_foundation::base::{CFRelease, CFRetain, CFTypeID, TCFType};
+use core_foundation::machport::{CFMachPort, CFMachPortRef};
 use geometry::CGPoint;
 use event_source::CGEventSource;
 
@@ -11,6 +14,8 @@ use foreign_types::ForeignType;
 pub type CGEventField = libc::uint32_t;
 pub type CGKeyCode = libc::uint16_t;
 pub type CGScrollEventUnit = libc::uint32_t;
+
+pub type CGEventTapCallBack = Option<unsafe extern "C" fn(proxy: CGEventTapProxy , event_type: CGEventType, event: CGEventRef, user_info: *mut c_void) -> CGEventRef>;
 
 /// Flags for events
 ///
@@ -38,6 +43,51 @@ bitflags! {
         const CGEventFlagNonCoalesced = 0x00000100;
     }
 }
+
+/// A mask that identifies the set of Quartz events to be observed in an event tap.
+///
+/// [Ref](http://opensource.apple.com/source/IOHIDFamily/IOHIDFamily-700/IOHIDSystem/IOKit/hidsystem/IOLLEvent.h)
+bitflags! {
+    #[repr(C)]
+    pub struct CGEventMask: u64 {
+          const CGEventNull = 0;
+
+          // Mouse events.
+          const CGEventLeftMouseDown = 1<<1;
+          const CGEventLeftMouseUp = 1<<2;
+          const CGEventRightMouseDown = 1<<3;
+          const CGEventRightMouseUp = 1<<4;
+          const CGEventMouseMoved = 1<<5;
+          const CGEventLeftMouseDragged = 1<<6;
+          const CGEventRightMouseDragged = 1<<7;
+
+          // Keyboard events.
+          const CGEventKeyDown = 1<<10;
+          const CGEventKeyUp = 1<<11;
+          const CGEventFlagsChanged = 1<<12;
+
+          // Specialized control devices.
+          const CGEventScrollWheel = 1<<22;
+          const CGEventTabletPointer = 1<<23;
+          const CGEventTabletProximity = 1<<24;
+          const CGEventOtherMouseDown = 1<<25;
+          const CGEventOtherMouseUp = 1<<26;
+          const CGEventOtherMouseDragged = 1<<27;
+
+          // Out of band event types. These are delivered to the event tap callback
+          // to notify it of unusual conditions that disable the event tap.
+          const CGEventTapDisabledByTimeout = 0xFFFFFFFE;
+          const CGEventTapDisabledByUserInput = 0xFFFFFFFF;
+    }
+}
+
+/* Generate an event mask for a single type of event. */
+// #define CGEventMaskBit(eventType)       ((CGEventMask)1 << (eventType))
+
+/* An event mask that represents all event types. */
+// #define kCGEventMaskForAllEvents        (~(CGEventMask)0)
+
+
 
 /// Key codes for keys that are independent of keyboard layout.
 ///
@@ -384,6 +434,41 @@ pub enum CGEventTapLocation {
     AnnotatedSession,
 }
 
+/// Where a new event tap is inserted into the list of active event taps.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub enum CGEventTapPlacement {
+    CGHeadInsertEventTap,
+    CGTailAppendEventTap,
+}
+
+/// Options for event tap
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub enum CGEventTapOptions {
+    CGEventTapOptionDefault,
+    CGEventTapOptionListenOnly,
+}
+
+#[doc(hidden)]
+#[repr(C)]
+pub struct __CGEventTapProxy(c_void);
+/// An opaque type that represents state within the client application that’s associated with an
+/// event tap.
+pub type CGEventTapProxy = *mut __CGEventTapProxy;
+
+// FIXME: Not sure where this should live
+pub fn create_event_tap(tap: CGEventTapLocation, place: CGEventTapPlacement, options: CGEventTapOptions, events_of_interest: CGEventMask, callback: CGEventTapCallBack, user_info: *mut c_void) -> Result<CFMachPort, ()> {
+    unsafe {
+        let machport_ref = CGEventTapCreate(tap, place, options, events_of_interest, callback, user_info);
+        if !machport_ref.is_null() {
+            Ok(TCFType::wrap_under_create_rule(machport_ref))
+        } else {
+            Err(())
+        }
+    }
+}
+
 foreign_type! {
     #[doc(hidden)]
     type CType = ::sys::CGEvent;
@@ -666,4 +751,19 @@ extern {
     /// fixed point number or integer, the value parameter is scaled as needed
     /// and converted to the appropriate type.
     fn CGEventSetDoubleValueField(event: ::sys::CGEventRef, field: CGEventField, value: f64);
+
+    /// Creates an event tap
+    ///
+    /// After creating an event tap, you can add it to a run loop as follows:
+    /// 1. Pass the event tap to the CFMachPortCreateRunLoopSource function to create a run loop
+    ///    event source.
+    /// 2. Call the CFRunLoopAddSource function to add the source to the appropriate run loop.
+    fn CGEventTapCreate(
+        tap: CGEventTapLocation,
+        place: CGEventTapPlacement,
+        options: CGEventTapOptions,
+        eventsOfInterest: CGEventMask,
+        callback: CGEventTapCallBack,
+        userInfo: *mut c_void
+    ) -> CFMachPortRef;
 }

@@ -15,7 +15,7 @@ pub type CGEventField = libc::uint32_t;
 pub type CGKeyCode = libc::uint16_t;
 pub type CGScrollEventUnit = libc::uint32_t;
 
-pub type CGEventTapCallBack = Option<unsafe extern "C" fn(proxy: CGEventTapProxy , event_type: CGEventType, event: CGEventRef, user_info: *mut c_void) -> CGEventRef>;
+pub type CGEventTapCallBack = Option<unsafe extern "C" fn(proxy: CGEventTapProxy , event_type: CGEventType, event: ::sys::CGEventRef, user_info: *mut c_void) -> ::sys::CGEventRef>;
 
 /// Flags for events
 ///

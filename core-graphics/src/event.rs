@@ -1,21 +1,22 @@
 #![allow(non_upper_case_globals)]
 
+use std::ptr;
 use std::os::raw::c_void;
 
-use core_foundation::base::{CFRelease, CFRetain, CFTypeID, TCFType};
+use core_foundation::base::{CFRelease, CFRetain, CFTypeID, TCFType, CFIndex};
 use core_foundation::machport::{CFMachPort, CFMachPortRef};
+use core_foundation::runloop::CFRunLoopSource;
 use geometry::CGPoint;
 use event_source::CGEventSource;
 
 use libc;
 
 use foreign_types::ForeignType;
+use foreign_types::ForeignTypeRef;
 
 pub type CGEventField = libc::uint32_t;
 pub type CGKeyCode = libc::uint16_t;
 pub type CGScrollEventUnit = libc::uint32_t;
-
-pub type CGEventTapCallBack = Option<unsafe extern "C" fn(proxy: CGEventTapProxy , event_type: CGEventType, event: ::sys::CGEventRef, user_info: *mut c_void) -> ::sys::CGEventRef>;
 
 /// Flags for events
 ///
@@ -457,15 +458,49 @@ pub struct __CGEventTapProxy(c_void);
 /// event tap.
 pub type CGEventTapProxy = *mut __CGEventTapProxy;
 
-// FIXME: Not sure where this should live
-pub fn create_event_tap(tap: CGEventTapLocation, place: CGEventTapPlacement, options: CGEventTapOptions, events_of_interest: CGEventMask, callback: CGEventTapCallBack, user_info: *mut c_void) -> Result<CFMachPort, ()> {
-    unsafe {
-        let machport_ref = CGEventTapCreate(tap, place, options, events_of_interest, callback, user_info);
-        if !machport_ref.is_null() {
-            Ok(TCFType::wrap_under_create_rule(machport_ref))
-        } else {
-            Err(())
+type __CGEventTapCallBack = Option<unsafe extern "C" fn(proxy: CGEventTapProxy , event_type: CGEventType, event: ::sys::CGEventRef, user_info: *mut c_void) -> ::sys::CGEventRef>;
+pub type CGEventTapCallBack = extern "C" fn(proxy: CGEventTapProxy, event_type: CGEventType, event: &CGEventRef, user_info: *mut c_void) -> Option<&CGEventRef>;
+
+unsafe extern "C" fn trampoline(proxy: CGEventTapProxy, event_type: CGEventType, event: ::sys::CGEventRef, user_info: *mut c_void) -> ::sys::CGEventRef {
+    assert!(!user_info.is_null(), "user_info supplied to CGEventTap trampoline is NULL");
+
+    let context = user_info as *mut CGEventTapContext;
+
+    let callback = (*context).callback;
+    let wrapped_event = CGEventRef::from_ptr(event);
+    match callback(proxy, event_type, wrapped_event, (*context).user_info) {
+        Some(event) => event.as_ptr(),
+        None => ptr::null_mut(),
+    }
+}
+
+#[repr(C)]
+struct CGEventTapContext {
+    callback: CGEventTapCallBack,
+    user_info: *mut c_void,
+}
+
+pub struct CGEventTap {
+    tap: CFMachPort,
+}
+
+impl CGEventTap {
+    pub fn new(tap: CGEventTapLocation, place: CGEventTapPlacement, options: CGEventTapOptions, events_of_interest: CGEventMask, callback: CGEventTapCallBack, user_info: *mut c_void) -> Result<Self, ()> {
+        // FIXME: context is currently leaked due to use of into_raw...
+        let context = Box::new(CGEventTapContext { callback, user_info });
+
+        unsafe {
+            let machport_ref = CGEventTapCreate(tap, place, options, events_of_interest, Some(trampoline), Box::into_raw(context) as *mut c_void);
+            if !machport_ref.is_null() {
+                Ok(CGEventTap { tap: TCFType::wrap_under_create_rule(machport_ref),  })
+            } else {
+                Err(())
+            }
         }
+    }
+
+    pub fn to_run_loop_source(&self, order: CFIndex) -> Option<CFRunLoopSource> {
+        self.tap.to_run_loop_source(order)
     }
 }
 
@@ -609,20 +644,22 @@ impl CGEvent {
         self.set_string_from_utf16_unchecked(&buf);
     }
 
-    pub fn get_integer_value_field(&self, field: CGEventField) -> i64 {
-        unsafe { CGEventGetIntegerValueField(self.as_ptr(), field) }
-    }
-
     pub fn set_integer_value_field(&self, field: CGEventField, value: i64) {
         unsafe { CGEventSetIntegerValueField(self.as_ptr(), field, value) }
     }
 
+    pub fn set_double_value_field(&self, field: CGEventField, value: f64) {
+        unsafe { CGEventSetDoubleValueField(self.as_ptr(), field, value) }
+    }
+}
+
+impl CGEventRef {
     pub fn get_double_value_field(&self, field: CGEventField) -> f64 {
         unsafe { CGEventGetDoubleValueField(self.as_ptr(), field) }
     }
 
-    pub fn set_double_value_field(&self, field: CGEventField, value: f64) {
-        unsafe { CGEventSetDoubleValueField(self.as_ptr(), field, value) }
+    pub fn get_integer_value_field(&self, field: CGEventField) -> i64 {
+        unsafe { CGEventGetIntegerValueField(self.as_ptr(), field) }
     }
 }
 
@@ -763,7 +800,7 @@ extern {
         place: CGEventTapPlacement,
         options: CGEventTapOptions,
         eventsOfInterest: CGEventMask,
-        callback: CGEventTapCallBack,
+        callback: __CGEventTapCallBack,
         userInfo: *mut c_void
     ) -> CFMachPortRef;
 }

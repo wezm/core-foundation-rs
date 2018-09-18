@@ -569,6 +569,10 @@ impl CGEventTap {
     pub fn to_run_loop_source(&self, order: CFIndex) -> Option<CFRunLoopSource> {
         self.tap.to_run_loop_source(order)
     }
+
+    pub fn enable(&self, enable: bool) {
+        unsafe { CGEventTapEnable(self.tap.as_concrete_TypeRef(), enable); }
+    }
 }
 
 foreign_type! {
@@ -870,4 +874,7 @@ extern {
         callback: __CGEventTapCallBack,
         userInfo: *mut c_void
     ) -> CFMachPortRef;
+
+    /// Enables or disables an event tap
+    fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
 }

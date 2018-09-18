@@ -14,13 +14,12 @@ use core_foundation_sys::base::CFIndex;
 use core_foundation_sys::base::{kCFAllocatorDefault, CFOptionFlags};
 use core_foundation_sys::string::CFStringRef;
 
-use base::{TCFType};
+use base::{TCFType, Boolean};
 use date::{CFAbsoluteTime, CFTimeInterval};
 use filedescriptor::CFFileDescriptor;
 use string::{CFString};
 
 pub type CFRunLoopMode = CFStringRef;
-
 
 declare_TCFType!(CFRunLoop, CFRunLoopRef);
 impl_TCFType!(CFRunLoop, CFRunLoopRef, CFRunLoopGetTypeID);
@@ -45,6 +44,10 @@ impl CFRunLoop {
         unsafe {
             CFRunLoopRun();
         }
+    }
+
+    pub fn run_in_mode(mode: CFRunLoopMode, seconds: CFTimeInterval, returnAfterSourceHandled: bool) -> i32 {
+        unsafe { CFRunLoopRunInMode(mode, seconds, returnAfterSourceHandled as Boolean) }
     }
 
     pub fn stop(&self) {
